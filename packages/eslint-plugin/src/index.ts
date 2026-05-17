@@ -1,9 +1,9 @@
 /**
- * eslint-plugin-routeguard
+ * @felix-neuro/eslint-plugin-routeguard
  *
  * Flat-config usage (eslint.config.mjs):
  *
- *   import routeguard from 'eslint-plugin-routeguard';
+ *   import routeguard from '@felix-neuro/eslint-plugin-routeguard';
  *   export default [routeguard.configs.recommended];
  *
  * Legacy usage (.eslintrc):
@@ -29,7 +29,7 @@ const rules = {
 };
 
 const plugin = {
-  meta: { name: 'eslint-plugin-routeguard', version: '0.1.0' },
+  meta: { name: '@felix-neuro/eslint-plugin-routeguard', version: '0.1.1' },
   rules,
   configs: {} as Record<string, unknown>,
 };

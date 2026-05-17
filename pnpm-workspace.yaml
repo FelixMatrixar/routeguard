@@ -4,4 +4,6 @@ packages:
   - 'packages/orms/*'
   - 'packages/eslint-plugin'
   - 'packages/dashboard'
+  - 'packages/mcp-server'
+  - 'packages/cli'
   - 'examples/*'

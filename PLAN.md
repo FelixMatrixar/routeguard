@@ -1,8 +1,8 @@
-# RouteGuard — Complete Build Plan
+﻿# RouteGuard — Complete Build Plan
 
 > Backend-only static analysis. 8 deterministic rules + 6 AI-powered rules.
 > Express + Fastify + NestJS. Prisma + Drizzle + TypeORM + Raw SQL.
-> ESLint plugin + VS Code extension + dashboard + MCP server + AI agent.
+> ESLint plugin + dashboard + MCP server + AI agent.
 > Privacy-first: local Granite 3.3 2B via node-llama-cpp. No Ollama. Nothing sent to the cloud.
 
 ---
@@ -12,7 +12,7 @@
 1. [Product Overview](#product-overview)
 2. [Bob Configuration Files](#bob-configuration-files) — create these before Phase 1
 3. [Build Phases](#build-phases) — all 16 phases in sequence (Phase 0 → Phase 15 + unified package)
-4. [Deployment](#deployment) — npm + VS Code Marketplace
+4. [Deployment](#deployment) — npm
 5. [Quality Bars](#quality-bars)
 6. [What Could Go Wrong](#what-could-go-wrong)
 7. [Pitch](#pitch)
@@ -56,7 +56,7 @@ shell commands, file system operations. Not frontend React/Vue/Angular.
 
 **Frameworks:** Express, Fastify, NestJS
 **ORMs:** Prisma, Drizzle, TypeORM, Raw SQL
-**Surfaces:** eslint-plugin-routeguard · VS Code extension · dashboard · MCP server
+**Surfaces:** eslint-plugin-routeguard · dashboard · MCP server
 
 ### Universal IR
 
@@ -136,7 +136,6 @@ routeguard/
 │   ├── eslint-plugin/lib/
 │   │   ├── rules/
 │   │   └── index.js
-│   ├── vscode-extension/src/
 │   ├── dashboard/src/
 │   ├── mcp-server/src/
 │   │   ├── index.ts
@@ -150,14 +149,13 @@ routeguard/
 │   └── cli/src/                       # Phase 16 — unified package
 │       ├── index.ts                   # commander.js entry point
 │       ├── commands/
-│       │   ├── setup.ts               # download model, install VS Code ext
+│       │   ├── setup.ts               # download model
 │       │   ├── doctor.ts              # verify all components
 │       │   ├── analyze.ts
 │       │   ├── dashboard.ts
 │       │   └── mcp.ts
 │       └── utils/
 │           ├── download-model.ts      # HuggingFace GGUF download
-│           └── vscode-install.ts      # code --install-extension
 ├── examples/
 │   ├── vulnerable-express/
 │   ├── vulnerable-fastify/
@@ -333,7 +331,6 @@ Changes there require updating every adapter and ORM package. Never bypass it.
 - packages/adapters/{express,fastify,nestjs}/ — framework AST → IR only
 - packages/orms/{prisma,drizzle,typeorm,raw-sql}/ — ORM calls → Sink IR only
 - packages/eslint-plugin/ — ESLint rule wiring
-- packages/vscode-extension/ — VS Code wrapper
 - packages/dashboard/ — local findings UI
 - packages/mcp-server/ — MCP server + AI agent
 - examples/vulnerable-*/ — intentionally broken, never auto-fix
@@ -402,8 +399,7 @@ Changes there require updating every adapter and ORM package. Never bypass it.
 - Running the full test suite: pnpm test
 - Building packages: pnpm build
 - Running ESLint against examples to verify detection
-- Packaging the VS Code extension: vsce package
-- Publishing: npm publish / vsce publish
+- Publishing: npm publish
 - Testing the MCP server manually
 
 ## Key commands
@@ -412,7 +408,6 @@ pnpm build                              # build all packages in order
 pnpm test                               # run all tests
 pnpm --filter @routeguard/core test     # single package
 npx eslint examples/vulnerable-express  # test detection
-cd packages/vscode-extension && vsce package  # build .vsix
 routeguard setup                        # download Granite model (one-time, ~1.5GB)
 routeguard doctor                       # verify model is present and loadable
 echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | node packages/mcp-server/dist/index.js
@@ -434,7 +429,6 @@ Use it to analyze files during development:
 ```
 dist/
 *.tsbuildinfo
-*.vsix
 node_modules/
 pnpm-lock.yaml
 .bob/checkpoints/
@@ -1073,47 +1067,7 @@ Publish results in `benchmark/results/`.
 
 ---
 
-### Phase 10 — VS Code Extension
-
-**Mode:** `/advanced` for scaffolding and builds, `/code` for logic
-
-**Step 10.1 — Scaffold**
-
-Mode: `/advanced`
-```
-Run: npx --yes yo code
-Select: New Extension (TypeScript)
-Name: routeguard
-```
-
-**Step 10.2 — Implement**
-
-Mode: `/code`
-```
-@/packages/vscode-extension/src/extension.ts
-
-Implement the RouteGuard VS Code extension.
-
-Contributions:
-1. Activity bar view: findings tree grouped by rule → file → line
-   Icons: 🔴 error, 🟡 warning, ✅ clean
-2. Status bar: "🛡️ RouteGuard: 3 issues" — click to open findings
-3. Command: "RouteGuard: Scan Workspace"
-4. Route Map webview: all detected routes with security status
-
-Inline diagnostics come for free from ESLint extension integration.
-
-Settings:
-- routeguard.ownershipFields: string[]
-- routeguard.ignoreRoutes: string[]
-- routeguard.frameworks: string[]
-```
-
-**Exit:** extension installs from `.vsix`. Inline diagnostics visible on examples.
-
----
-
-### Phase 11 — Dashboard
+### Phase 10 — Dashboard
 
 **Mode:** `/dashboard-ui`
 
@@ -1143,7 +1097,7 @@ Start command: routeguard dashboard
 
 ---
 
-### Phase 12 — Documentation
+### Phase 11 — Documentation
 
 **Mode:** `/ask` for drafting (read-only, no accidental edits)
 
@@ -1160,9 +1114,8 @@ Write README.md. Sections:
 5. "AI features" — node-llama-cpp setup, Granite 3.3 2B, routeguard setup, ai_analyze_route
 6. "Configuration" — every option with type, default, example
 7. "CI/CD" — GitHub Actions example (deterministic only, not AI)
-8. "VS Code extension" — install, screenshot placeholder
 9. "Dashboard" — how to run
-10. "MCP server" — install, Claude Desktop / Cursor / VS Code config
+10. "MCP server" — install, Claude Desktop / Cursor 
 11. "Benchmark results" — link to benchmark/results/
 12. "Limitations" — NestJS cross-service, raw SQL concat, AI agent limits
 13. "Roadmap" — v2 items
@@ -1202,118 +1155,18 @@ Write DETECTION_RULES.md. For each of the 8 rules, one section containing:
 
 ---
 
-### Phase 13 — Release (ESLint Plugin + VS Code Extension)
+### Phase 12 — Release (ESLint Plugin)
 
 See the **Deployment** section below for full step-by-step instructions.
 
 **Summary:**
 1. `npm publish` for `eslint-plugin-routeguard`
-2. `vsce publish` for VS Code extension
 3. Update README with benchmark results
-4. Tag releases: `git tag eslint-plugin-v0.1.0` and `git tag vscode-v0.1.0`
+3. Tag release: `git tag eslint-plugin-v0.1.0`
 
 ---
 
-### Phase 14 — MCP Server
-
-**What:** STDIO MCP server exposing RouteGuard's deterministic engine as tools.
-Runs locally on the developer's machine. No HTTP — the agent needs local file access.
-
-**Package structure:**
-```
-packages/mcp-server/src/
-├── index.ts           # STDIO entry point + graceful shutdown
-├── server.ts          # MCP server setup, tool registration
-├── tools/
-│   ├── analyze-file.ts
-│   ├── analyze-directory.ts
-│   ├── analyze-snippet.ts
-│   ├── get-routes.ts
-│   ├── check-rule.ts
-│   └── explain-finding.ts   # deterministic templates — no LLM
-└── utils/
-    └── format-finding.ts
-```
-
-**Six deterministic tools:**
-```ts
-analyze_file({ filePath, rules? }) → Finding[]
-analyze_directory({ dirPath, rules?, ignorePatterns? }) → { findings, routeCount, filesAnalyzed, durationMs }
-analyze_snippet({ code, framework, language? }) → Finding[]
-get_routes({ filePath }) → Route[]
-check_rule({ filePath, rule }) → Finding[]
-explain_finding({ finding, includeFixExample? }) → { summary, attackScenario, suggestedFix, codeExample? }
-```
-
-**Bob prompts:**
-
-Step 14.1 — Understand MCP SDK (mode: `/ask`):
-```
-@/packages/core/src/ir/types.ts
-
-I'm implementing an MCP server using @modelcontextprotocol/sdk with STDIO transport.
-The server wraps a code analysis engine returning Finding[] objects.
-
-Explain:
-1. How to create an MCP server with STDIO transport
-2. How to register a tool with zod input schema validation
-3. How the tool handler receives input and returns output
-4. How to handle errors gracefully (file not found, wrong file type)
-5. How to handle graceful shutdown on SIGINT/SIGTERM
-```
-
-Step 14.2 — Scaffold server (mode: `/code`):
-```
-@/packages/core/src/ir/types.ts
-@/packages/core/src/engine/index.ts
-
-Implement the RouteGuard MCP server entry point and setup.
-Use @modelcontextprotocol/sdk with STDIO transport.
-Register all 6 tools with zod input schemas.
-Each handler: validate → call RouteGuard core → return JSON text block.
-Graceful shutdown on SIGINT/SIGTERM.
-```
-
-Step 14.3 — Implement tools (mode: `/code`), one prompt per tool.
-
-Step 14.4 — Test (mode: `/advanced`):
-```bash
-pnpm --filter @routeguard/mcp-server build
-echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | node packages/mcp-server/dist/index.js
-```
-
-**User config per client:**
-
-Claude Desktop (`~/Library/Application Support/Claude/claude_desktop_config.json`):
-```json
-{ "mcpServers": { "routeguard": { "command": "npx", "args": ["routeguard-mcp"] } } }
-```
-
-Cursor (`.cursor/mcp.json`):
-```json
-{ "mcpServers": { "routeguard": { "command": "npx", "args": ["routeguard-mcp"] } } }
-```
-
-VS Code (`.vscode/mcp.json`):
-```json
-{ "servers": { "routeguard": { "type": "stdio", "command": "npx", "args": ["routeguard-mcp"] } } }
-```
-
-**Publish:**
-```bash
-npm publish --workspace=packages/mcp-server --access public
-git tag mcp-v0.1.0 && git push origin mcp-v0.1.0
-```
-
-**Exit:**
-- [ ] All 6 tools work in Claude Desktop
-- [ ] `analyze_file` matches `npx eslint` findings on same file
-- [ ] `routeguard-mcp` npx invocation works without pre-install
-- [ ] Claude Desktop, Cursor, VS Code configs documented in README
-
----
-
-### Phase 15 — AI Agent (Granite 3.3 2B + Knowledge Skills + ReAct)
+### Phase 13 — AI Agent (Granite 3.3 2B + Knowledge Skills + ReAct)
 
 **What:** A repo-agnostic security analysis agent built into the MCP server.
 One new MCP tool: `ai_analyze_route`. Detects 6 OWASP rules deterministic
@@ -1649,7 +1502,7 @@ On-demand only. Never automatic. Never in CI.
 
 **Bob prompts for Phase 15:**
 
-Step 15.1 — Understand node-llama-cpp (mode: `/ask`):
+Step 13.1 — Understand node-llama-cpp (mode: `/ask`):
 ```
 I'm implementing an AI inference client using node-llama-cpp to run
 IBM Granite 3.3 2B locally for security code analysis.
@@ -1666,7 +1519,7 @@ Explain:
 6. Memory implications: model weights (~1.5GB) loaded once, context created per call
 ```
 
-Step 15.3 — Implement ReAct loop (mode: `/code`):
+Step 13.2 — Implement ReAct loop (mode: `/code`):
 ```
 @/packages/mcp-server/src/agent/granite.ts
 @/packages/core/src/ir/types.ts
@@ -1686,7 +1539,7 @@ Context management: summarize evidence when it exceeds 2000 tokens.
 Never include full file contents more than once — reference by filename after first read.
 ```
 
-Step 15.4 — Implement knowledge skills (mode: `/code`):
+Step 13.3 — Implement knowledge skills (mode: `/code`):
 ```
 @/packages/mcp-server/src/agent/loop.ts
 
@@ -1703,7 +1556,7 @@ Always wrap parsing in try/catch — retry once with stricter prompt on failure.
 On second failure return { confidence: 'low', error: 'unparseable response' }.
 ```
 
-Step 15.5 — Implement search_code (mode: `/code`):
+Step 13.4 — Implement search_code (mode: `/code`):
 ```
 Implement the search_code agent tool.
 
@@ -1717,7 +1570,7 @@ Handle: regex queries, plain strings, file pattern filtering, maxResults cap (de
 Detect ripgrep availability at module load. Log warning if absent.
 ```
 
-Step 15.6 — Wire ai_analyze_route tool (mode: `/code`):
+Step 13.5 — Wire ai_analyze_route tool (mode: `/code`):
 ```
 @/packages/mcp-server/src/server.ts
 @/packages/mcp-server/src/agent/loop.ts
@@ -1736,7 +1589,7 @@ Log each agent step to stderr (not stdout — that's MCP protocol).
 Record durationMs per rule and total.
 ```
 
-Step 15.7 — Integration test (mode: `/advanced`):
+Step 13.6 — Integration test (mode: `/advanced`):
 ```bash
 # Verify model is present
 routeguard doctor
@@ -1770,7 +1623,7 @@ echo '{
 
 ---
 
-### Phase 16 — Unified Package + Setup Wizard
+### Phase 14 — Unified Package + Setup Wizard
 
 **What:** One npm package (`routeguard`) that bundles everything — the ESLint plugin,
 the MCP server, the AI agent, the dashboard, and a CLI with setup and doctor commands.
@@ -1795,12 +1648,10 @@ Size:   1.47 GB
 
 ✓ Model saved to ~/.routeguard/models/granite-3.3-2b-instruct-Q4_K_M.gguf
 
-Installing VS Code extension...
-✓ VS Code extension installed (routeguard.routeguard)
 
 ✓ Setup complete
 
-  Deterministic rules (8)  active in ESLint + VS Code + MCP
+  Deterministic rules (8)  active in ESLint + MCP
   AI rules (6)             active via: routeguard analyze --ai
                                         MCP tool: ai_analyze_route
 
@@ -1810,8 +1661,8 @@ Run 'routeguard doctor' at any time to verify your setup.
 **CLI commands:**
 
 ```bash
-routeguard setup              # download model, install VS Code ext
-routeguard doctor             # verify model + extension + ESLint plugin
+routeguard setup              # download Granite model (one-time)
+routeguard doctor             # verify model + ESLint plugin
 routeguard analyze <path>     # run deterministic rules on a file/dir
 routeguard analyze --ai <path>  # run all 14 rules (slow, on-demand)
 routeguard dashboard          # launch local dashboard UI
@@ -1825,14 +1676,13 @@ packages/cli/
 ├── src/
 │   ├── index.ts               # CLI entry point (commander.js)
 │   ├── commands/
-│   │   ├── setup.ts           # download model, install VS Code ext
+│   │   ├── setup.ts           # download model
 │   │   ├── doctor.ts          # verify everything is working
 │   │   ├── analyze.ts         # run analysis from CLI
 │   │   ├── dashboard.ts       # launch dashboard
 │   │   └── mcp.ts             # start MCP server
 │   └── utils/
 │       ├── download-model.ts  # HuggingFace GGUF download with progress
-│       └── vscode-install.ts  # code --install-extension automation
 └── package.json
 ```
 
@@ -1883,27 +1733,6 @@ export async function downloadModel(onProgress: (pct: number) => void): Promise<
 }
 ```
 
-**VS Code extension install (`utils/vscode-install.ts`):**
-
-```ts
-import { execSync } from 'child_process'
-import { join } from 'path'
-
-export function installVSCodeExtension(): void {
-  // The .vsix is bundled inside the CLI package
-  const vsixPath = join(__dirname, '..', 'assets', 'routeguard.vsix')
-
-  try {
-    execSync(`code --install-extension ${vsixPath}`, { stdio: 'pipe' })
-  } catch {
-    // VS Code CLI not in PATH — give manual instructions
-    console.log(`\nTo install the VS Code extension manually:`)
-    console.log(`  code --install-extension ${vsixPath}`)
-    console.log(`  Or: Extensions panel → ··· → Install from VSIX → ${vsixPath}`)
-  }
-}
-```
-
 **Doctor command:**
 
 ```bash
@@ -1916,16 +1745,15 @@ RouteGuard Doctor
 node-llama-cpp      ✓ v3.x.x
 Model file          ✓ ~/.routeguard/models/granite-3.3-2b-instruct-Q4_K_M.gguf (1.47GB)
 Model loadable      ✓ loaded in 4.2s, context OK
-VS Code extension   ✓ routeguard.routeguard v0.1.0
 ESLint plugin       ✓ eslint-plugin-routeguard v0.1.0
 MCP server          ✓ routeguard-mcp v0.1.0
 
 All systems go. Run 'routeguard analyze <path>' to start.
 ```
 
-**Bob prompts for Phase 16:**
+**Bob prompts for Phase 14:**
 
-Step 16.1 — Design CLI (mode: `/plan`):
+Step 14.1 — Design CLI (mode: `/plan`):
 ```
 I'm building a unified CLI for RouteGuard that bundles:
 - eslint-plugin-routeguard (workspace package)
@@ -1940,15 +1768,11 @@ For the setup command, design the flow:
 1. Check node-llama-cpp is installed (it's bundled — should always be true)
 2. Check if model file exists at ~/.routeguard/models/
 3. If not: download from HuggingFace with progress bar
-4. Detect if VS Code is installed (check if 'code' CLI is in PATH)
-5. If yes: install the bundled .vsix
-6. If no: print manual install instructions
-
 What edge cases should setup handle?
 What should doctor verify and in what order?
 ```
 
-Step 16.2 — Implement model download (mode: `/code`):
+Step 14.2 — Implement model download (mode: `/code`):
 ```
 @/packages/cli/src/utils/download-model.ts
 
@@ -1966,7 +1790,7 @@ Requirements:
 - Handle network errors gracefully with a clear retry message
 ```
 
-Step 16.3 — Implement setup command (mode: `/code`):
+Step 14.3 — Implement setup command (mode: `/code`):
 ```
 @/packages/cli/src/commands/setup.ts
 
@@ -1977,16 +1801,13 @@ Flow:
 2. Check model file exists → if yes: "Model already present, skipping download"
 3. If not: show download progress bar, call downloadModel()
 4. Verify model loadable: call getLlama().loadModel() briefly
-5. Check 'code' CLI availability (which code / where code)
-6. If available: call installVSCodeExtension()
-7. If not: print manual install path for the bundled .vsix
-8. Print summary: what's active, what's next
+5. Print summary: what's active, what's next
 
 Use ora spinners for each step. Green checkmark on success, yellow warning on skip,
 red X on failure (but don't exit — continue to next step).
 ```
 
-Step 16.4 — Implement doctor command (mode: `/code`):
+Step 14.4 — Implement doctor command (mode: `/code`):
 ```
 @/packages/cli/src/commands/doctor.ts
 
@@ -1996,8 +1817,7 @@ Checks in order:
 1. node-llama-cpp version
 2. Model file exists at expected path + correct size
 3. Model actually loadable (getLlama().loadModel() — timeout after 10s)
-4. VS Code extension installed (code --list-extensions | grep routeguard)
-5. ESLint plugin importable (require('eslint-plugin-routeguard'))
+4. ESLint plugin importable (require('eslint-plugin-routeguard'))
 6. MCP server buildable (check dist/index.js exists)
 
 Each check: name (padded) + ✓/✗/⚠ + detail
@@ -2014,12 +1834,10 @@ git tag cli-v0.1.0 && git push origin cli-v0.1.0
 
 **Exit:**
 - [ ] `npm install -g routeguard` installs everything
-- [ ] `routeguard setup` downloads model with progress, installs VS Code ext
 - [ ] `routeguard doctor` correctly verifies all components
 - [ ] `routeguard analyze examples/vulnerable-express` shows findings
 - [ ] `routeguard analyze --ai examples/vulnerable-express/app.js` triggers AI agent
 - [ ] Model already present → setup skips download cleanly
-- [ ] VS Code CLI absent → setup prints manual install path, does not error
 - [ ] Partial download → setup resumes correctly
 
 ---
@@ -2076,63 +1894,6 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 ```
 
-### Part 2 — VS Code Marketplace
-
-**Setup (one-time):**
-```bash
-npm install -g @vscode/vsce
-
-# 1. Create publisher at https://marketplace.visualstudio.com/manage
-# 2. Create PAT at https://dev.azure.com
-#    Scopes: Marketplace → Manage
-vsce login YOUR_PUBLISHER_ID
-```
-
-**Required `packages/vscode-extension/package.json` fields:**
-```json
-{
-  "name": "routeguard",
-  "displayName": "RouteGuard",
-  "description": "Detect OWASP API security vulnerabilities in Node.js backends",
-  "version": "0.1.0",
-  "publisher": "YOUR_PUBLISHER_ID",
-  "engines": { "vscode": "^1.85.0" },
-  "categories": ["Linters", "Other"],
-  "icon": "images/icon.png",
-  "repository": { "type": "git", "url": "https://github.com/YOUR_USERNAME/routeguard" }
-}
-```
-
-Required before publishing: `icon.png` (128×128px), `CHANGELOG.md`.
-
-```bash
-cd packages/vscode-extension
-vsce package                                    # creates .vsix
-code --install-extension routeguard-0.1.0.vsix # test locally first
-vsce publish
-```
-
-**GitHub Actions** (`.github/workflows/publish-vscode.yml`):
-```yaml
-name: Publish VS Code Extension
-on:
-  push:
-    tags: ['vscode-v*']
-jobs:
-  publish:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: '20' }
-      - run: npm install -g @vscode/vsce
-      - run: npm ci
-      - run: npm run build --workspace=packages/vscode-extension
-      - run: vsce publish
-        env:
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
-```
-
 ### Part 3 — npm (routeguard-mcp)
 
 ```json
@@ -2157,7 +1918,6 @@ Four packages version independently. Publish with git tags:
 
 ```bash
 git tag eslint-plugin-v0.1.0 && git push origin eslint-plugin-v0.1.0
-git tag vscode-v0.1.0        && git push origin vscode-v0.1.0
 git tag mcp-v0.1.0           && git push origin mcp-v0.1.0
 git tag cli-v0.1.0           && git push origin cli-v0.1.0
 ```
@@ -2212,7 +1972,7 @@ Do not ship until all are true.
 
 **Surfaces (Phases 9-14):**
 - [ ] Dashboard loads in < 2s with 1000+ findings. All 5 pages work
-- [ ] VS Code extension installs from `.vsix` without errors
+
 - [ ] All 6 deterministic MCP tools work correctly in Claude Desktop
 - [ ] `analyze_file` findings match `npx eslint` findings on same file
 - [ ] `routeguard-mcp` npx invocation works without pre-install
@@ -2229,7 +1989,6 @@ Do not ship until all are true.
 **Unified package (Phase 16):**
 - [ ] `npm install -g routeguard` installs without errors
 - [ ] `routeguard setup` downloads model with progress bar
-- [ ] `routeguard setup` installs VS Code extension when `code` CLI is available
 - [ ] `routeguard doctor` correctly verifies all components and exits with code 1 on failure
 - [ ] `routeguard analyze` produces same findings as `npx eslint` on same file
 - [ ] Partial download resumes correctly on second `routeguard setup`
@@ -2238,7 +1997,6 @@ Do not ship until all are true.
 - [ ] All doc files complete per the spec in Phase 12
 - [ ] README has an honest Limitations section (incl. AI agent limits)
 - [ ] npm dry-run shows only correct files for all 3 packages
-- [ ] `.vsix` tested locally before marketplace publish
 
 ---
 
@@ -2291,14 +2049,8 @@ partway through. Always implement resume logic (check existing file size vs Cont
 **Knowledge skill prompt drift.** If you edit a knowledge skill after testing,
 re-run all Phase 15 integration tests. Small prompt changes break JSON parsing downstream.
 
-**VS Code CLI not in PATH.** On some Windows and macOS installations, `code` is not
-automatically added to PATH. `routeguard setup` must handle this gracefully — detect
-absence, print the `.vsix` path, give manual install instructions. Do not error out.
-
 **npm publish before testing.** Always dry-run first. Always test in a clean directory.
 
-**Marketplace rejection.** Needs: icon.png (128×128), CHANGELOG.md, repository link,
-non-vague description. Have all before `vsce publish`.
 
 ---
 
