@@ -15,6 +15,16 @@ export type ORM = 'prisma' | 'drizzle' | 'typeorm' | 'raw-sql';
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 export type DbOperation = 'read' | 'write' | 'delete';
 
+export type SinkKind =
+  | 'db-filter'          // no-bola: DB read with tainted filter
+  | 'db-write'           // no-mass-assignment: DB write with tainted data
+  | 'outbound-url'       // no-ssrf: HTTP request with tainted URL
+  | 'raw-sql'            // no-sql-injection: raw SQL with tainted input
+  | 'shell-exec'         // no-command-injection: exec/spawn with tainted input
+  | 'fs-path'            // no-path-traversal: fs operation with tainted path
+  | 'redirect-url'       // no-open-redirect: res.redirect with tainted URL
+  | 'hardcoded-secret';  // no-hardcoded-secrets: string literal in crypto/jwt
+
 export type TaintSourceKind =
   | 'route-param'   // req.params.id, @Param('id')
   | 'query-param'   // req.query.foo, @Query('foo')
@@ -49,17 +59,26 @@ export type FilterKey = {
 };
 
 export type Sink = {
-  orm: ORM;
-  operation: DbOperation;
-  /** Model/table being queried, e.g. "order", "invoice" */
-  model: string;
-  filterKeys: FilterKey[];
+  kind: SinkKind;
   node: TSESTree.Node;
+  
+  // For db-filter and db-write only
+  operation?: DbOperation;
+  model?: string;
+  filterKeys?: FilterKey[];
+  
+  // For outbound-url, raw-sql, shell-exec, fs-path, redirect-url
+  taintedArg?: {
+    argIndex: number;
+    taintSource: TaintedSource;
+    node: TSESTree.Node;
+  };
+  
+  // For hardcoded-secret only
+  secretValue?: string;
 };
 
 export type Route = {
-  framework: Framework;
-  method: HttpMethod;
   path: string;
   handlerNode: TSESTree.Node;
   taintedSources: TaintedSource[];
