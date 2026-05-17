@@ -1,37 +1,55 @@
 /**
- * Prisma ORM Adapter — Reference Implementation
+ * Prisma ORM Adapter — Reference ORM
  *
- * Detects Prisma query calls and converts WHERE/DATA clauses to Sink IR.
+ * Converts Prisma query calls into Sink IR. The detection engine reads the
+ * resulting `filterKeys` to decide BOLA / mass-assignment findings.
  *
- * Supported: findUnique, findFirst, findMany, update, updateMany,
- *            delete, deleteMany, upsert, create, createMany
- * Nested where: AND/OR arrays
- * Out of scope (v1): $queryRaw (→ raw-sql adapter), $transaction
- *
- * AST shape for `prisma.order.findUnique({ where: { id } })`:
- *   CallExpression
- *     callee: MemberExpression
- *       object: MemberExpression        ← prisma.order
- *         object: Identifier(prisma)
- *         property: Identifier(order)   ← model name
- *       property: Identifier(findUnique)
- *     arguments[0]: ObjectExpression    ← { where: { ... } }
+ * Supported: findUnique, findFirst, findMany, update, updateMany, upsert,
+ *            delete, deleteMany, create, createMany. Nested AND/OR/NOT.
+ * Out of scope (v1): $queryRaw (handled by the raw-sql sink), $transaction.
  */
 
 import type { TSESTree } from '@typescript-eslint/utils';
 import type { Sink, FilterKey, TaintedSource, DbOperation, SinkKind } from '@routeguard/core';
+import { classifyRequestMember, traceTaint, walkNode } from '@routeguard/core';
+
+type OperationInfo = {
+  operation: DbOperation;
+  sinkKind: SinkKind;
+  hasWhere: boolean;
+  hasData: boolean;
+};
 
 /**
- * Detects Prisma query calls and produces Sink IR.
+ * Walks a route handler and produces a Sink for every Prisma call found.
  *
- * @example
- * prisma.order.findUnique({ where: { id } })
- * → Sink { kind: 'db-filter', operation: 'read', model: 'order', filterKeys: [...] }
+ * @param handlerNode - The route handler function
+ * @param taintedSources - User-controlled sources in scope
+ * @param authContextExpr - Auth-context expression, e.g. 'req.user.id'
+ * @returns Sinks for each Prisma query
+ */
+export function detectPrismaSinks(
+  handlerNode: TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression,
+  taintedSources: TaintedSource[],
+  authContextExpr: string | null
+): Sink[] {
+  const sinks: Sink[] = [];
+  if (handlerNode.body.type !== 'BlockStatement') return sinks;
+
+  walkNode(handlerNode.body, (node) => {
+    if (node.type !== 'CallExpression') return;
+    const sink = detectPrismaSink(node, taintedSources, authContextExpr);
+    if (sink) sinks.push(sink);
+  });
+
+  return sinks;
+}
+
+/**
+ * Detects a single Prisma query call and produces Sink IR.
  *
- * @param node - CallExpression to analyze
- * @param taintedSources - Known tainted sources from route handler
- * @param authContextExpr - Auth context expression (e.g., 'req.user.id')
- * @returns Sink object or null if not a Prisma call
+ * @example prisma.order.findUnique({ where: { id } })
+ *   → Sink { kind: 'db-filter', operation: 'read', model: 'order', filterKeys }
  */
 export function detectPrismaSink(
   node: TSESTree.CallExpression,
@@ -40,290 +58,168 @@ export function detectPrismaSink(
 ): Sink | null {
   // Must be: prisma.MODEL.METHOD(...)
   if (node.callee.type !== 'MemberExpression') return null;
-  
   const methodNode = node.callee;
   if (methodNode.property.type !== 'Identifier') return null;
-  
-  // Check for prisma.MODEL pattern
   if (methodNode.object.type !== 'MemberExpression') return null;
+
   const modelNode = methodNode.object;
-  
-  if (modelNode.object.type !== 'Identifier') return null;
-  if (modelNode.object.name !== 'prisma') return null;
+  if (modelNode.object.type !== 'Identifier' || modelNode.object.name !== 'prisma') {
+    return null;
+  }
   if (modelNode.property.type !== 'Identifier') return null;
-  
+
   const methodName = methodNode.property.name;
-  const modelName = modelNode.property.name;
-  
-  // Skip special Prisma methods starting with $
   if (methodName.startsWith('$')) return null;
-  
-  // Determine operation type and sink kind
+
   const opInfo = getOperationInfo(methodName);
   if (!opInfo) return null;
-  
-  // Extract filter keys from where and/or data clauses
-  const filterKeys = extractFilterKeys(node, opInfo, taintedSources, authContextExpr);
-  
+
   return {
     kind: opInfo.sinkKind,
     operation: opInfo.operation,
-    model: modelName,
-    filterKeys,
+    model: modelNode.property.name,
+    filterKeys: extractFilterKeys(node, opInfo, taintedSources, authContextExpr),
     node,
   };
 }
 
-/**
- * Maps Prisma method names to operation types and sink kinds.
- */
-function getOperationInfo(methodName: string): {
-  operation: DbOperation;
-  sinkKind: SinkKind;
-  hasWhere: boolean;
-  hasData: boolean;
-} | null {
+/** Maps a Prisma method name to its operation kind. */
+function getOperationInfo(methodName: string): OperationInfo | null {
   switch (methodName) {
-    // Read operations → db-filter
     case 'findUnique':
     case 'findFirst':
     case 'findMany':
       return { operation: 'read', sinkKind: 'db-filter', hasWhere: true, hasData: false };
-    
-    // Delete operations → db-filter (filter determines what gets deleted)
     case 'delete':
     case 'deleteMany':
       return { operation: 'delete', sinkKind: 'db-filter', hasWhere: true, hasData: false };
-    
-    // Write operations → db-write
     case 'update':
     case 'updateMany':
-      return { operation: 'write', sinkKind: 'db-write', hasWhere: true, hasData: true };
-    
     case 'upsert':
       return { operation: 'write', sinkKind: 'db-write', hasWhere: true, hasData: true };
-    
     case 'create':
     case 'createMany':
       return { operation: 'write', sinkKind: 'db-write', hasWhere: false, hasData: true };
-    
     default:
       return null;
   }
 }
 
-/**
- * Extracts filter keys from Prisma call arguments.
- *
- * For db-filter: extracts from 'where' clause
- * For db-write: extracts from both 'where' AND 'data' clauses
- */
+/** Extracts filter keys from the `where` and `data` clauses. */
 function extractFilterKeys(
   node: TSESTree.CallExpression,
-  opInfo: { hasWhere: boolean; hasData: boolean },
+  opInfo: OperationInfo,
   taintedSources: TaintedSource[],
   authContextExpr: string | null
 ): FilterKey[] {
-  const filterKeys: FilterKey[] = [];
-  
-  // First argument must be an object
-  if (node.arguments.length === 0) return filterKeys;
   const firstArg = node.arguments[0];
-  if (firstArg.type !== 'ObjectExpression') return filterKeys;
-  
-  // Extract from 'where' clause
+  if (!firstArg || firstArg.type !== 'ObjectExpression') return [];
+
+  const keys: FilterKey[] = [];
   if (opInfo.hasWhere) {
-    const whereProp = firstArg.properties.find(
-      p => p.type === 'Property' && 
-           p.key.type === 'Identifier' && 
-           p.key.name === 'where'
-    );
-    
-    if (whereProp && whereProp.type === 'Property' && whereProp.value.type === 'ObjectExpression') {
-      filterKeys.push(...extractFromWhereClause(whereProp.value, taintedSources, authContextExpr));
-    }
+    keys.push(...extractClause(firstArg, 'where', taintedSources, authContextExpr));
   }
-  
-  // Extract from 'data' clause (for write operations)
   if (opInfo.hasData) {
-    const dataProp = firstArg.properties.find(
-      p => p.type === 'Property' && 
-           p.key.type === 'Identifier' && 
-           p.key.name === 'data'
-    );
-    
-    if (dataProp && dataProp.type === 'Property' && dataProp.value.type === 'ObjectExpression') {
-      filterKeys.push(...extractFromDataClause(dataProp.value, taintedSources, authContextExpr));
-    }
+    keys.push(...extractClause(firstArg, 'data', taintedSources, authContextExpr));
   }
-  
-  return filterKeys;
+  return keys;
 }
 
 /**
- * Extracts filter keys from 'where' clause.
+ * Extracts filter keys from a named clause.
  *
- * Handles nested AND/OR arrays by flattening them.
- *
- * @example
- * { id, userId: req.user.id }
- * → [{ key: 'id', valueKind: 'tainted' }, { key: 'userId', valueKind: 'auth-context' }]
- *
- * @example
- * { AND: [{ id }, { userId: req.user.id }] }
- * → [{ key: 'id', valueKind: 'tainted' }, { key: 'userId', valueKind: 'auth-context' }]
+ * A clause whose value is a whole-object reference — `data: req.body` — yields
+ * a single `(whole object)` key, so the engine still sees the taint. Without
+ * this, the most common mass-assignment shape would be invisible.
  */
-function extractFromWhereClause(
-  whereObj: TSESTree.ObjectExpression,
+function extractClause(
+  arg: TSESTree.ObjectExpression,
+  clauseName: 'where' | 'data',
   taintedSources: TaintedSource[],
   authContextExpr: string | null
 ): FilterKey[] {
-  const filterKeys: FilterKey[] = [];
-  
-  for (const prop of whereObj.properties) {
-    if (prop.type !== 'Property') continue;
-    if (prop.key.type !== 'Identifier') continue;
-    
+  const prop = arg.properties.find(
+    (p): p is TSESTree.Property =>
+      p.type === 'Property' && p.key.type === 'Identifier' && p.key.name === clauseName
+  );
+  if (!prop) return [];
+
+  if (prop.value.type === 'ObjectExpression') {
+    return extractObjectKeys(prop.value, taintedSources, authContextExpr);
+  }
+
+  // Whole-object spread: data: req.body / where: req.query
+  const taintSource = traceTaint(prop.value, taintedSources);
+  if (taintSource) {
+    return [{ key: '(whole object)', valueKind: 'tainted', taintSource, node: prop.value }];
+  }
+  return [];
+}
+
+/** Extracts keys from an object literal, flattening nested AND/OR/NOT. */
+function extractObjectKeys(
+  obj: TSESTree.ObjectExpression,
+  taintedSources: TaintedSource[],
+  authContextExpr: string | null
+): FilterKey[] {
+  const keys: FilterKey[] = [];
+
+  for (const prop of obj.properties) {
+    if (prop.type !== 'Property' || prop.key.type !== 'Identifier') continue;
     const key = prop.key.name;
-    
-    // Handle nested AND/OR arrays
+
     if ((key === 'AND' || key === 'OR') && prop.value.type === 'ArrayExpression') {
       for (const elem of prop.value.elements) {
         if (elem?.type === 'ObjectExpression') {
-          // Recursively extract from each condition in the array
-          filterKeys.push(...extractFromWhereClause(elem, taintedSources, authContextExpr));
+          keys.push(...extractObjectKeys(elem, taintedSources, authContextExpr));
         }
       }
       continue;
     }
-    
-    // Handle nested NOT
     if (key === 'NOT' && prop.value.type === 'ObjectExpression') {
-      filterKeys.push(...extractFromWhereClause(prop.value, taintedSources, authContextExpr));
+      keys.push(...extractObjectKeys(prop.value, taintedSources, authContextExpr));
       continue;
     }
-    
-    // Regular filter key
-    const valueKind = classifyValueKind(prop.value, taintedSources, authContextExpr);
-    const taintSource = findTaintSource(prop.value, taintedSources);
-    
-    filterKeys.push({
+
+    keys.push({
       key,
-      valueKind,
-      taintSource,
+      valueKind: classifyValueKind(prop.value, taintedSources, authContextExpr),
+      taintSource: traceTaint(prop.value, taintedSources) ?? undefined,
       node: prop.value,
     });
   }
-  
-  return filterKeys;
+
+  return keys;
 }
 
-/**
- * Extracts filter keys from 'data' clause.
- *
- * For mass assignment detection, we treat data fields as potential taint sinks.
- *
- * @example
- * { name, email: req.body.email }
- * → [{ key: 'name', valueKind: 'tainted' }, { key: 'email', valueKind: 'tainted' }]
- */
-function extractFromDataClause(
-  dataObj: TSESTree.ObjectExpression,
-  taintedSources: TaintedSource[],
-  authContextExpr: string | null
-): FilterKey[] {
-  const filterKeys: FilterKey[] = [];
-  
-  for (const prop of dataObj.properties) {
-    if (prop.type !== 'Property') continue;
-    if (prop.key.type !== 'Identifier') continue;
-    
-    const key = prop.key.name;
-    const valueKind = classifyValueKind(prop.value, taintedSources, authContextExpr);
-    const taintSource = findTaintSource(prop.value, taintedSources);
-    
-    filterKeys.push({
-      key,
-      valueKind,
-      taintSource,
-      node: prop.value,
-    });
-  }
-  
-  return filterKeys;
-}
-
-/**
- * Classifies the value kind of a filter key.
- *
- * Returns:
- * - 'tainted' if value traces to a TaintedSource
- * - 'auth-context' if value is req.user.id (or configured equivalent)
- * - 'literal' if value is a hardcoded string/number
- * - 'unknown' otherwise
- */
+/** Classifies a filter value as tainted / auth-context / literal / unknown. */
 function classifyValueKind(
-  valueNode: TSESTree.Expression | TSESTree.Pattern,
+  value: TSESTree.Node,
   taintedSources: TaintedSource[],
   authContextExpr: string | null
 ): FilterKey['valueKind'] {
-  // Check if it's a tainted identifier
-  if (valueNode.type === 'Identifier') {
-    const isTainted = taintedSources.some(s => s.localName === valueNode.name);
-    if (isTainted) return 'tainted';
+  if (
+    value.type === 'MemberExpression' &&
+    authContextExpr &&
+    buildMemberExpressionString(value) === authContextExpr
+  ) {
+    return 'auth-context';
   }
-  
-  // Check if it's auth context (req.user.id)
-  if (valueNode.type === 'MemberExpression' && authContextExpr) {
-    const exprStr = buildMemberExpressionString(valueNode);
-    if (exprStr === authContextExpr) return 'auth-context';
+  if (traceTaint(value, taintedSources) || classifyRequestMember(value)) {
+    return 'tainted';
   }
-  
-  // Check if it's a literal value
-  if (valueNode.type === 'Literal') {
-    return 'literal';
-  }
-  
-  // Everything else is unknown (computed values, function calls, etc.)
+  if (value.type === 'Literal') return 'literal';
   return 'unknown';
 }
 
-/**
- * Builds a string representation of a MemberExpression.
- *
- * @example
- * req.user.id → 'req.user.id'
- */
+/** Renders a member expression as a dotted string, e.g. `req.user.id`. */
 function buildMemberExpressionString(node: TSESTree.MemberExpression): string {
   const parts: string[] = [];
-  
   let current: TSESTree.Node = node;
   while (current.type === 'MemberExpression') {
-    if (current.property.type === 'Identifier') {
-      parts.unshift(current.property.name);
-    }
+    if (current.property.type === 'Identifier') parts.unshift(current.property.name);
     current = current.object;
   }
-  
-  if (current.type === 'Identifier') {
-    parts.unshift(current.name);
-  }
-  
+  if (current.type === 'Identifier') parts.unshift(current.name);
   return parts.join('.');
 }
-
-/**
- * Finds the TaintedSource that corresponds to a value expression.
- *
- * @example
- * Value is Identifier('id') → finds TaintedSource with localName='id'
- */
-function findTaintSource(
-  valueNode: TSESTree.Expression | TSESTree.Pattern,
-  taintedSources: TaintedSource[]
-): TaintedSource | undefined {
-  if (valueNode.type !== 'Identifier') return undefined;
-  return taintedSources.find(s => s.localName === valueNode.name);
-}
-
-// Made with Bob
