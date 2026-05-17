@@ -1,188 +1,205 @@
 /**
  * Fastify Framework Adapter
  *
- * Converts Fastify AST patterns into Universal IR Route[].
- * Follows Express adapter pattern with Fastify-specific differences.
+ * Converts Fastify AST patterns into Universal IR Route[], following the
+ * Express adapter structure.
  *
  * Supported:
- *   fastify.get('/path', handler)
- *   fastify.post('/path', { schema }, handler)
- *   fastify.route({ method: 'GET', url: '/path', handler })
- *
- * Out of scope (v1): preHandler hooks, onRequest hooks, nested plugins
+ *   fastify.get('/p', handler)
+ *   fastify.post('/p', { schema }, handler)
+ *   fastify.route({ method: 'GET', url: '/p', handler })
+ * Out of scope (v1): preHandler / onRequest hooks, nested plugins.
  */
 
 import type { TSESTree } from '@typescript-eslint/utils';
-import type { HttpMethod, TaintedSource, AuthContextRef } from '@routeguard/core';
+import type { HttpMethod, TaintedSource, AuthContextRef, Route } from '@routeguard/core';
+import { walkNode } from '@routeguard/core';
+
+type HandlerFn = TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression;
+type AuthConfig = { property: string; idField: string };
+
+const HTTP_METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
+const METHOD_NAMES = ['get', 'post', 'put', 'patch', 'delete'];
 
 /**
- * Detects Fastify route registration calls.
+ * Walks a Program and produces one Route per Fastify route registration.
  *
- * Matches:
- * - fastify.get('/path', handler)
- * - fastify.post('/users', { schema }, handler)
- * - fastify.route({ method: 'GET', url: '/path', handler })
- *
- * Does NOT match:
- * - fastify.register(), fastify.listen()
- * - someObj.get() where first arg isn't a string
- * - route() calls without method/url properties
- *
- * @example
- * fastify.get('/orders/:id', async (request, reply) => { ... })
- * fastify.post('/users', { schema }, (request, reply) => { ... })
- * fastify.route({ method: 'GET', url: '/orders/:id', handler: async (request, reply) => { ... } })
+ * Routes carry an empty `sinks` array — the orchestrator fills it from the
+ * ORM and sink detectors.
  */
-export function detectRouteCall(
-  node: TSESTree.CallExpression
-): { method: HttpMethod; path: string } | null {
-  // Must be: someObj.method(...)
-  if (node.callee.type !== 'MemberExpression') return null;
-  if (node.callee.property.type !== 'Identifier') return null;
-  
-  const methodName = node.callee.property.name;
-  
-  // Pattern 1 & 2: fastify.get('/path', ...) or fastify.post('/path', { options }, handler)
-  if (['get', 'post', 'put', 'patch', 'delete'].includes(methodName.toLowerCase())) {
-    // First argument must be a string literal path
-    if (node.arguments.length < 2) return null;
-    const firstArg = node.arguments[0];
-    if (firstArg.type !== 'Literal') return null;
-    if (typeof firstArg.value !== 'string') return null;
-    
-    return {
-      method: methodName.toUpperCase() as HttpMethod,
-      path: firstArg.value,
-    };
-  }
-  
-  // Pattern 3: fastify.route({ method: 'GET', url: '/path', handler })
-  if (methodName === 'route') {
-    if (node.arguments.length < 1) return null;
-    const firstArg = node.arguments[0];
-    if (firstArg.type !== 'ObjectExpression') return null;
-    
-    let method: string | null = null;
-    let url: string | null = null;
-    
-    for (const prop of firstArg.properties) {
-      if (prop.type !== 'Property') continue;
-      if (prop.key.type !== 'Identifier') continue;
-      
-      if (prop.key.name === 'method' && prop.value.type === 'Literal') {
-        if (typeof prop.value.value === 'string') {
-          method = prop.value.value.toUpperCase();
-        }
-      }
-      
-      if (prop.key.name === 'url' && prop.value.type === 'Literal') {
-        if (typeof prop.value.value === 'string') {
-          url = prop.value.value;
+export function extractRoutes(
+  program: TSESTree.Program,
+  authConfig: AuthConfig
+): Route[] {
+  const routes: Route[] = [];
+
+  walkNode(program, (node) => {
+    if (node.type !== 'CallExpression') return;
+    const routeInfo = detectRouteCall(node);
+    if (!routeInfo) return;
+
+    const handler = findHandler(node);
+    if (!handler) return;
+
+    const reqParamName =
+      handler.params[0]?.type === 'Identifier' ? handler.params[0].name : 'request';
+
+    routes.push({
+      framework: 'fastify',
+      method: routeInfo.method,
+      path: routeInfo.path,
+      handlerNode: handler,
+      taintedSources: extractTaintedSources(handler, reqParamName),
+      authContext: extractAuthContext(handler, reqParamName, authConfig),
+      sinks: [],
+    });
+  });
+
+  return routes;
+}
+
+/**
+ * Returns the route handler. For `fastify.get(...)` it is the last function
+ * argument; for `fastify.route({ handler })` it is the `handler` property.
+ */
+function findHandler(node: TSESTree.CallExpression): HandlerFn | null {
+  for (let i = node.arguments.length - 1; i >= 0; i--) {
+    const arg = node.arguments[i];
+    if (arg.type === 'FunctionExpression' || arg.type === 'ArrowFunctionExpression') {
+      return arg;
+    }
+    if (arg.type === 'ObjectExpression') {
+      for (const prop of arg.properties) {
+        if (
+          prop.type === 'Property' &&
+          prop.key.type === 'Identifier' &&
+          prop.key.name === 'handler' &&
+          (prop.value.type === 'FunctionExpression' ||
+            prop.value.type === 'ArrowFunctionExpression')
+        ) {
+          return prop.value;
         }
       }
     }
-    
-    if (!method || !url) return null;
-    
-    const validMethods: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
-    if (!validMethods.includes(method as HttpMethod)) return null;
-    
-    return {
-      method: method as HttpMethod,
-      path: url,
-    };
   }
-  
   return null;
 }
 
 /**
- * Extracts tainted sources from handler function body.
+ * Detects a Fastify route registration call.
  *
- * Finds patterns:
- * - const { id } = request.params → route-param
- * - const { search } = request.query → query-param
- * - const { email } = request.body → body-field
- * - const id = request.params.id → route-param (direct access)
+ * Matches:  fastify.get('/p', handler), fastify.post('/p', { schema }, handler)
+ *           fastify.route({ method: 'GET', url: '/p', handler })
+ * Rejects:  fastify.register(), fastify.listen()
+ */
+export function detectRouteCall(
+  node: TSESTree.CallExpression
+): { method: HttpMethod; path: string } | null {
+  if (node.callee.type !== 'MemberExpression') return null;
+  if (node.callee.property.type !== 'Identifier') return null;
+
+  const methodName = node.callee.property.name;
+
+  // fastify.get('/p', ...)
+  if (METHOD_NAMES.includes(methodName.toLowerCase())) {
+    if (node.arguments.length < 2) return null;
+    const firstArg = node.arguments[0];
+    if (firstArg.type !== 'Literal' || typeof firstArg.value !== 'string') return null;
+    return { method: methodName.toUpperCase() as HttpMethod, path: firstArg.value };
+  }
+
+  // fastify.route({ method, url, handler })
+  if (methodName === 'route') {
+    const firstArg = node.arguments[0];
+    if (!firstArg || firstArg.type !== 'ObjectExpression') return null;
+
+    let method: string | null = null;
+    let url: string | null = null;
+    for (const prop of firstArg.properties) {
+      if (prop.type !== 'Property' || prop.key.type !== 'Identifier') continue;
+      if (prop.value.type !== 'Literal' || typeof prop.value.value !== 'string') continue;
+      if (prop.key.name === 'method') method = prop.value.value.toUpperCase();
+      if (prop.key.name === 'url') url = prop.value.value;
+    }
+
+    if (!method || !url) return null;
+    if (!HTTP_METHODS.includes(method as HttpMethod)) return null;
+    return { method: method as HttpMethod, path: url };
+  }
+
+  return null;
+}
+
+/**
+ * Extracts tainted sources from the top level of a handler body.
  *
- * @example
- * async (request, reply) => {
- *   const { id } = request.params;        // ← route-param: id
- *   const { search } = request.query;     // ← query-param: search
- *   const { email } = request.body;       // ← body-field: email
- * }
+ * Matches:  const { id } = request.params  → route-param
+ *           const id = request.params.id   → route-param
+ *           const { q } = request.query    → query-param
+ *           const { email } = request.body → body-field
  */
 export function extractTaintedSources(
-  handlerNode: TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression,
+  handlerNode: HandlerFn,
   requestParamName: string
 ): TaintedSource[] {
   const sources: TaintedSource[] = [];
-  
-  // Handler body must be a block statement
   if (handlerNode.body.type !== 'BlockStatement') return sources;
-  
+
   for (const stmt of handlerNode.body.body) {
     if (stmt.type !== 'VariableDeclaration') continue;
-    
+
     for (const decl of stmt.declarations) {
       if (!decl.init) continue;
-      
-      // Pattern 1: const { id } = request.params
+
       if (decl.id.type === 'ObjectPattern' && decl.init.type === 'MemberExpression') {
-        const sourceKind = getSourceKind(decl.init, requestParamName);
-        if (!sourceKind) continue;
-        
-        // Extract each destructured property
+        const kind = getSourceKind(decl.init, requestParamName);
+        if (!kind) continue;
         for (const prop of decl.id.properties) {
-          if (prop.type !== 'Property') continue;
-          if (prop.key.type !== 'Identifier') continue;
-          if (prop.value.type !== 'Identifier') continue;
-          
-          sources.push({
-            kind: sourceKind,
-            localName: prop.value.name,
-            requestKey: prop.key.name,
-            node: prop.value,
-          });
+          if (
+            prop.type === 'Property' &&
+            prop.key.type === 'Identifier' &&
+            prop.value.type === 'Identifier'
+          ) {
+            sources.push({
+              kind,
+              localName: prop.value.name,
+              requestKey: prop.key.name,
+              node: prop.value,
+            });
+          }
         }
       }
-      
-      // Pattern 2: const id = request.params.id
-      if (decl.id.type === 'Identifier' && decl.init.type === 'MemberExpression') {
-        const parent = decl.init;
-        if (parent.object.type !== 'MemberExpression') continue;
-        
-        const sourceKind = getSourceKind(parent.object, requestParamName);
-        if (!sourceKind) continue;
-        if (parent.property.type !== 'Identifier') continue;
-        
+
+      if (
+        decl.id.type === 'Identifier' &&
+        decl.init.type === 'MemberExpression' &&
+        decl.init.object.type === 'MemberExpression' &&
+        decl.init.property.type === 'Identifier'
+      ) {
+        const kind = getSourceKind(decl.init.object, requestParamName);
+        if (!kind) continue;
         sources.push({
-          kind: sourceKind,
+          kind,
           localName: decl.id.name,
-          requestKey: parent.property.name,
+          requestKey: decl.init.property.name,
           node: decl.id,
         });
       }
     }
   }
-  
+
   return sources;
 }
 
-/**
- * Helper: Determines if a MemberExpression is request.params/query/body.
- *
- * Matches: request.params, request.query, request.body
- * Does NOT match: request.user, params.id, other.params
- */
+/** Maps request.params / request.query / request.body to a taint source kind. */
 function getSourceKind(
   node: TSESTree.MemberExpression,
   requestParamName: string
 ): TaintedSource['kind'] | null {
-  if (node.object.type !== 'Identifier') return null;
-  if (node.object.name !== requestParamName) return null;
+  if (node.object.type !== 'Identifier' || node.object.name !== requestParamName) {
+    return null;
+  }
   if (node.property.type !== 'Identifier') return null;
-  
   switch (node.property.name) {
     case 'params':
       return 'route-param';
@@ -196,122 +213,34 @@ function getSourceKind(
 }
 
 /**
- * Extracts authenticated user context reference.
- *
- * Finds: request.user.id (or configured equivalent like request.session.userId)
- *
- * @example
- * // With default config { property: 'user', idField: 'id' }
- * async (request, reply) => {
- *   const userId = request.user.id;  // ← matches
- * }
- *
- * // With custom config { property: 'session', idField: 'userId' }
- * async (request, reply) => {
- *   const id = request.session.userId;  // ← matches
- * }
+ * Finds the authenticated-user reference anywhere in the handler.
+ * With default config this matches `request.user.id`.
  */
 export function extractAuthContext(
-  handlerNode: TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression,
+  handlerNode: HandlerFn,
   requestParamName: string,
-  authConfig: { property: string; idField: string }
+  authConfig: AuthConfig
 ): AuthContextRef | null {
-  // Handler body must be a block statement
-  if (handlerNode.body.type !== 'BlockStatement') return null;
-  
-  for (const stmt of handlerNode.body.body) {
-    // Look for any expression or variable declaration
-    let expr: TSESTree.Expression | null = null;
-    
-    if (stmt.type === 'ExpressionStatement') {
-      expr = stmt.expression;
-    } else if (stmt.type === 'VariableDeclaration') {
-      for (const decl of stmt.declarations) {
-        if (decl.init) {
-          expr = decl.init as TSESTree.Expression;
-          break;
-        }
-      }
-    }
-    
-    if (!expr) continue;
-    
-    // Walk the expression tree looking for request.user.id pattern
-    const authRef = findAuthContextInExpression(expr, requestParamName, authConfig);
-    if (authRef) return authRef;
-  }
-  
-  return null;
-}
+  let found: AuthContextRef | null = null;
 
-/**
- * Recursively searches an expression for auth context pattern.
- *
- * Matches: request.user.id, request.session.userId (based on config)
- */
-function findAuthContextInExpression(
-  node: TSESTree.Node,
-  requestParamName: string,
-  authConfig: { property: string; idField: string }
-): AuthContextRef | null {
-  // Pattern: request.user.id
-  // MemberExpression { object: MemberExpression { object: Identifier(request), property: Identifier(user) }, property: Identifier(id) }
-  if (node.type === 'MemberExpression') {
-    if (node.object.type === 'MemberExpression') {
-      const innerObj = node.object;
-      
-      // Check: request.user.id
-      if (innerObj.object.type === 'Identifier' &&
-          innerObj.object.name === requestParamName &&
-          innerObj.property.type === 'Identifier' &&
-          innerObj.property.name === authConfig.property &&
-          node.property.type === 'Identifier' &&
-          node.property.name === authConfig.idField) {
-        
-        return {
-          expression: `${requestParamName}.${authConfig.property}.${authConfig.idField}`,
-          node: node,
-        };
-      }
+  walkNode(handlerNode, (node) => {
+    if (found) return;
+    if (
+      node.type === 'MemberExpression' &&
+      node.object.type === 'MemberExpression' &&
+      node.object.object.type === 'Identifier' &&
+      node.object.object.name === requestParamName &&
+      node.object.property.type === 'Identifier' &&
+      node.object.property.name === authConfig.property &&
+      node.property.type === 'Identifier' &&
+      node.property.name === authConfig.idField
+    ) {
+      found = {
+        expression: `${requestParamName}.${authConfig.property}.${authConfig.idField}`,
+        node,
+      };
     }
-    
-    // Recursively check nested expressions
-    const fromObject = findAuthContextInExpression(node.object, requestParamName, authConfig);
-    if (fromObject) return fromObject;
-    
-    if (node.property.type !== 'Literal') {
-      const fromProperty = findAuthContextInExpression(node.property, requestParamName, authConfig);
-      if (fromProperty) return fromProperty;
-    }
-  }
-  
-  // Check other expression types that might contain member expressions
-  if (node.type === 'CallExpression') {
-    for (const arg of node.arguments) {
-      const found = findAuthContextInExpression(arg, requestParamName, authConfig);
-      if (found) return found;
-    }
-  }
-  
-  if (node.type === 'ObjectExpression') {
-    for (const prop of node.properties) {
-      if (prop.type === 'Property') {
-        const found = findAuthContextInExpression(prop.value, requestParamName, authConfig);
-        if (found) return found;
-      }
-    }
-  }
-  
-  if (node.type === 'ArrayExpression') {
-    for (const elem of node.elements) {
-      if (elem) {
-        const found = findAuthContextInExpression(elem, requestParamName, authConfig);
-        if (found) return found;
-      }
-    }
-  }
-  
-  return null;
-}
+  });
 
-// Made with Bob
+  return found;
+}

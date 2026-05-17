@@ -1,0 +1,19 @@
+{
+  "name": "@routeguard/adapter-fastify",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "test": "echo \"no tests\" && exit 0",
+    "lint": "tsc -b"
+  },
+  "dependencies": {
+    "@routeguard/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@typescript-eslint/utils": "^7.0.0",
+    "typescript": "^5.4.0"
+  }
+}
