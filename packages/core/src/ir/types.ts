@@ -79,6 +79,8 @@ export type Sink = {
 };
 
 export type Route = {
+  framework: Framework;
+  method: HttpMethod;
   path: string;
   handlerNode: TSESTree.Node;
   taintedSources: TaintedSource[];

@@ -159,7 +159,10 @@ function checkMassAssignment(
   // (This would be detected by the adapter as individual FilterKeys, not a whole-object taint)
   // For now, any tainted body field in a write = finding
   const primaryTaint = taintedDataKeys[0];
-  
+  const requestKey = primaryTaint.taintSource!.requestKey;
+  const bodyRef =
+    requestKey === '*' ? 'the entire `req.body` object' : `\`req.body.${requestKey}\``;
+
   return {
     route,
     sink,
@@ -168,7 +171,7 @@ function checkMassAssignment(
     severity: config.severity,
     message:
       `Mass Assignment: ${route.path} writes to \`${sink.model}\` ` +
-      `using unsanitized \`req.body.${primaryTaint.taintSource!.requestKey}\`. ` +
+      `using unsanitized ${bodyRef}. ` +
       `Use explicit field allowlist instead of spreading entire request body.`,
     suggestion:
       `Destructure only allowed fields: \`const { field1, field2 } = req.body;\` ` +
