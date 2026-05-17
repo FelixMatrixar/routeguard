@@ -13,9 +13,6 @@ pnpm --filter @routeguard/core test
 # Test detection by running ESLint on vulnerable examples
 npx eslint examples/vulnerable-express
 
-# Build VS Code extension (must cd first, not from root)
-cd packages/vscode-extension && vsce package
-
 # AI model setup (one-time, downloads ~1.5GB Granite 3.3 2B)
 routeguard setup
 routeguard doctor  # verify model loaded
