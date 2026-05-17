@@ -1,0 +1,14 @@
+dist/
+*.tsbuildinfo
+*.vsix
+node_modules/
+pnpm-lock.yaml
+.bob/checkpoints/
+
+# DO NOT AUTO-FIX — intentionally vulnerable demo apps
+examples/vulnerable-express/
+examples/vulnerable-fastify/
+examples/vulnerable-nestjs/
+
+coverage/
+*.log

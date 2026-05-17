@@ -1,0 +1,8 @@
+packages:
+  - 'packages/core'
+  - 'packages/adapters/*'
+  - 'packages/orms/*'
+  - 'packages/eslint-plugin'
+  - 'packages/vscode-extension'
+  - 'packages/dashboard'
+  - 'examples/*'

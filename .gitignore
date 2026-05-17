@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.env
+.env.*
+*.vsix
+.bob/checkpoints/
+.DS_Store
+Thumbs.db
