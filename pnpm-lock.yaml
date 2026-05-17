@@ -49,6 +49,9 @@ importers:
       '@types/jest':
         specifier: ^29.0.0
         version: 29.5.14
+      '@typescript-eslint/typescript-estree':
+        specifier: ^7.0.0
+        version: 7.18.0(typescript@5.9.3)
       '@typescript-eslint/utils':
         specifier: ^7.0.0
         version: 7.18.0(eslint@8.57.1)(typescript@5.9.3)
