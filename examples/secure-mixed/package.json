@@ -1,0 +1,6 @@
+{
+  "name": "@routeguard/example-secure-mixed",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Secure example — must produce zero RouteGuard findings"
+}
