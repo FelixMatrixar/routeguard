@@ -3,6 +3,5 @@ packages:
   - 'packages/adapters/*'
   - 'packages/orms/*'
   - 'packages/eslint-plugin'
-  - 'packages/vscode-extension'
   - 'packages/dashboard'
   - 'examples/*'
