@@ -5,9 +5,13 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc -b",
     "test": "jest",
-    "dev": "tsc --watch"
+    "lint": "tsc -b",
+    "dev": "tsc -b --watch"
+  },
+  "dependencies": {
+    "minimatch": "^9.0.3"
   },
   "devDependencies": {
     "@typescript-eslint/utils": "^7.0.0",
