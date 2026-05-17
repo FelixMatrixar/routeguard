@@ -14,7 +14,9 @@
     "@routeguard/adapter-express": "workspace:*",
     "@routeguard/adapter-fastify": "workspace:*",
     "@routeguard/adapter-nestjs": "workspace:*",
-    "@routeguard/orm-prisma": "workspace:*"
+    "@routeguard/orm-prisma": "workspace:*",
+    "@routeguard/orm-drizzle": "workspace:*",
+    "@routeguard/orm-typeorm": "workspace:*"
   },
   "peerDependencies": {
     "eslint": ">=8"

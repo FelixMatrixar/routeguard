@@ -26,6 +26,30 @@
 
 import type { TSESTree } from '@typescript-eslint/utils';
 import type { Sink, FilterKey, TaintedSource, DbOperation, SinkKind } from '@routeguard/core';
+import { walkNode } from '@routeguard/core';
+
+/**
+ * Walks a route handler and produces a Sink for every Drizzle call found.
+ *
+ * @param handlerNode - The route handler function
+ * @param taintedSources - User-controlled sources in scope
+ * @param authContextExpr - Auth-context expression, e.g. 'req.user.id'
+ */
+export function detectDrizzleSinks(
+  handlerNode: TSESTree.Node,
+  taintedSources: TaintedSource[],
+  authContextExpr: string | null
+): Sink[] {
+  const sinks: Sink[] = [];
+
+  walkNode(handlerNode, (node) => {
+    if (node.type !== 'CallExpression') return;
+    const sink = detectDrizzleSink(node, taintedSources, authContextExpr);
+    if (sink) sinks.push(sink);
+  });
+
+  return sinks;
+}
 
 /**
  * Detects Drizzle query calls and produces Sink IR.

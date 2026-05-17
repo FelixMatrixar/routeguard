@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Ground truth for RouteGuard benchmark. Each entry defines one expected finding or one mustNotFire assertion. Precision/recall/F1 are calculated per rule.",
+  "entries": [
+    {
+      "id": "express-bola-1",
+      "rule": "routeguard/no-bola",
+      "file": "examples/vulnerable-express/app.js",
+      "line": 17,
+      "framework": "express",
+      "orm": "prisma",
+      "description": "findUnique with only req.params.id — no ownership check"
+    },
+    {
+      "id": "express-bola-2",
+      "rule": "routeguard/no-bola",
+      "file": "examples/vulnerable-express/app.js",
+      "line": 25,
+      "framework": "express",
+      "orm": "prisma",
+      "description": "findFirst with only req.query.invoiceId — no ownership check"
+    },
+    {
+      "id": "express-mass-assign-1",
+      "rule": "routeguard/no-mass-assignment",
+      "file": "examples/vulnerable-express/app.js",
+      "line": 33,
+      "framework": "express",
+      "orm": "prisma",
+      "description": "update with data: req.body — mass assignment"
+    },
+    {
+      "id": "fastify-bola-1",
+      "rule": "routeguard/no-bola",
+      "file": "examples/vulnerable-fastify/app.js",
+      "line": 18,
+      "framework": "fastify",
+      "orm": "prisma",
+      "description": "findUnique with only destructured id from request.params"
+    },
+    {
+      "id": "fastify-ssrf-1",
+      "rule": "routeguard/no-ssrf",
+      "file": "examples/vulnerable-fastify/app.js",
+      "line": 24,
+      "framework": "fastify",
+      "orm": "none",
+      "description": "axios.get with request.query.url — SSRF"
+    },
+    {
+      "id": "fastify-bola-2",
+      "rule": "routeguard/no-bola",
+      "file": "examples/vulnerable-fastify/app.js",
+      "line": 33,
+      "framework": "fastify",
+      "orm": "prisma",
+      "description": "fastify.route({}) DELETE with no ownership check"
+    },
+    {
+      "id": "secure-no-bola",
+      "rule": "routeguard/no-bola",
+      "file": "examples/secure-mixed/app.js",
+      "line": 18,
+      "mustNotFire": true,
+      "framework": "express",
+      "orm": "prisma",
+      "description": "findFirst with userId ownership check — must NOT fire"
+    },
+    {
+      "id": "secure-no-sql",
+      "rule": "routeguard/no-sql-injection",
+      "file": "examples/secure-mixed/app.js",
+      "line": 32,
+      "mustNotFire": true,
+      "framework": "express",
+      "orm": "raw-sql",
+      "description": "parameterized query with [req.params.id] — must NOT fire"
+    },
+    {
+      "id": "secure-no-path",
+      "rule": "routeguard/no-path-traversal",
+      "file": "examples/secure-mixed/app.js",
+      "line": 38,
+      "mustNotFire": true,
+      "framework": "express",
+      "orm": "none",
+      "description": "path.basename guard — must NOT fire"
+    },
+    {
+      "id": "secure-no-secret",
+      "rule": "routeguard/no-hardcoded-secrets",
+      "file": "examples/secure-mixed/app.js",
+      "line": 45,
+      "mustNotFire": true,
+      "framework": "express",
+      "orm": "none",
+      "description": "process.env.JWT_SECRET — must NOT fire"
+    }
+  ]
+}

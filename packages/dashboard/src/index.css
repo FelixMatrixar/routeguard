@@ -1,0 +1,77 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #0a0a0a;
+  --surface: #111111;
+  --border: #1e1e1e;
+  --green: #00ff41;
+  --amber: #ffb800;
+  --red: #ff3333;
+  --muted: #555555;
+  --text: #cccccc;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+}
+
+/* Terminal glow on focus */
+input:focus,
+button:focus-visible {
+  outline: 1px solid var(--green);
+  outline-offset: 2px;
+}
+
+@layer components {
+  .card {
+    @apply bg-surface border border-border p-4;
+  }
+
+  .stat-value {
+    @apply text-2xl font-bold;
+  }
+
+  .badge-green {
+    @apply text-xs px-1.5 py-0.5 border border-green text-green;
+  }
+
+  .badge-amber {
+    @apply text-xs px-1.5 py-0.5 border border-amber text-amber;
+  }
+
+  .badge-red {
+    @apply text-xs px-1.5 py-0.5 border border-red text-red;
+  }
+
+  .badge-muted {
+    @apply text-xs px-1.5 py-0.5 border border-muted text-muted;
+  }
+
+  .table-row-hover {
+    @apply hover:bg-surface cursor-default;
+  }
+}

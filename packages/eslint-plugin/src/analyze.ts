@@ -25,6 +25,8 @@ import { extractRoutes as extractExpressRoutes } from '@routeguard/adapter-expre
 import { extractRoutes as extractFastifyRoutes } from '@routeguard/adapter-fastify';
 import { extractRoutes as extractNestJSRoutes } from '@routeguard/adapter-nestjs';
 import { detectPrismaSinks } from '@routeguard/orm-prisma';
+import { detectDrizzleSinks } from '@routeguard/orm-drizzle';
+import { detectTypeORMSinks } from '@routeguard/orm-typeorm';
 
 type HandlerFn = TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression;
 
@@ -51,6 +53,8 @@ export function analyzeProgram(
     const authExpr = route.authContext?.expression ?? null;
     route.sinks = [
       ...detectPrismaSinks(handler, route.taintedSources, authExpr),
+      ...detectDrizzleSinks(handler, route.taintedSources, authExpr),
+      ...detectTypeORMSinks(handler, route.taintedSources, authExpr),
       ...detectSSRFSinks(handler, route.taintedSources),
       ...detectSQLInjectionSinks(handler, route.taintedSources),
       ...detectCommandInjectionSinks(handler, route.taintedSources),
