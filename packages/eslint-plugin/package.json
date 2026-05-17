@@ -1,0 +1,31 @@
+{
+  "name": "eslint-plugin-routeguard",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "test": "jest",
+    "lint": "tsc -b"
+  },
+  "dependencies": {
+    "@routeguard/core": "workspace:*",
+    "@routeguard/adapter-express": "workspace:*",
+    "@routeguard/adapter-fastify": "workspace:*",
+    "@routeguard/adapter-nestjs": "workspace:*",
+    "@routeguard/orm-prisma": "workspace:*"
+  },
+  "peerDependencies": {
+    "eslint": ">=8"
+  },
+  "devDependencies": {
+    "@typescript-eslint/utils": "^7.0.0",
+    "typescript": "^5.4.0",
+    "eslint": "^8.57.0",
+    "@types/eslint": "^8.56.0",
+    "jest": "^29.0.0",
+    "@types/jest": "^29.0.0",
+    "ts-jest": "^29.0.0"
+  }
+}
